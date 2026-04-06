@@ -1,0 +1,267 @@
+require('dotenv').config();
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const mongoose = require('mongoose');
+const cors = require('cors');
+
+const app = express();
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: true,
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+});
+
+app.use(cors({
+  origin: true,
+  credentials: true,
+}));
+app.use(express.json());
+
+// Routes
+app.use('/api/user', require('./routes/user'));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
+
+// MongoDB connection
+mongoose
+  .connect(process.env.MONGODB_URI)
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch((err) => console.error('❌ MongoDB error:', err.message));
+
+// ─── Matching Logic ───────────────────────────────────────────────────────────
+// waitingUsers: Map<socketId, { socket, userId, gender, preference }>
+const waitingUsers = new Map();
+// activeRooms: Map<roomId, { users: [socketId, socketId] }>
+const activeRooms = new Map();
+// socketToRoom: Map<socketId, roomId>
+const socketToRoom = new Map();
+// WebRTC: both peers must signal ready before the offerer creates an offer (avoids lost SDP)
+const rtcReadyByRoom = new Map();
+
+let connectedSockets = 0;
+
+function tryMatch(newUser) {
+  for (const [sid, candidate] of waitingUsers.entries()) {
+    if (sid === newUser.socket.id) continue;
+
+    const aWantsB = newUser.preference.includes(candidate.gender) || newUser.preference.includes('any');
+    const bWantsA = candidate.preference.includes(newUser.gender) || candidate.preference.includes('any');
+
+    if (aWantsB && bWantsA) {
+      // Remove both from queue
+      waitingUsers.delete(sid);
+      waitingUsers.delete(newUser.socket.id);
+
+      const roomId = `room_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const offererSid = newUser.socket.id;
+      const expiresAt = Date.now() + 10000;
+      const matchTimeoutId = setTimeout(() => {
+        const r = activeRooms.get(roomId);
+        if (!r || r.proceedEmitted) return;
+        r.users.forEach((uid) => {
+          io.sockets.sockets.get(uid)?.emit('matchTimeout');
+        });
+        cleanupRoom(null, roomId);
+      }, 10000);
+
+      activeRooms.set(roomId, {
+        users: [newUser.socket.id, sid],
+        offererSid,
+        accepts: new Set(),
+        proceedEmitted: false,
+        expiresAt,
+        matchTimeoutId,
+        meta: {
+          [newUser.socket.id]: { userId: newUser.userId, profile: newUser.profile || {} },
+          [sid]: { userId: candidate.userId, profile: candidate.profile || {} },
+        },
+      });
+      socketToRoom.set(newUser.socket.id, roomId);
+      socketToRoom.set(sid, roomId);
+
+      newUser.socket.join(roomId);
+      candidate.socket.join(roomId);
+
+      const peerForNew = candidate.profile || {};
+      const peerForCand = newUser.profile || {};
+
+      newUser.socket.emit('matched', {
+        roomId,
+        isOfferer: true,
+        peerId: candidate.userId,
+        peerProfile: peerForNew,
+        expiresAt,
+      });
+      candidate.socket.emit('matched', {
+        roomId,
+        isOfferer: false,
+        peerId: newUser.userId,
+        peerProfile: peerForCand,
+        expiresAt,
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
+// ─── Socket.IO Events ─────────────────────────────────────────────────────────
+io.on('connection', (socket) => {
+  console.log(`🔌 Connected: ${socket.id}`);
+  connectedSockets += 1;
+  io.emit('onlineCount', connectedSockets);
+
+  socket.on('joinQueue', ({ userId, gender, preference, profile }) => {
+    // Leave any existing room first
+    const existingRoom = socketToRoom.get(socket.id);
+    if (existingRoom) {
+      socket.to(existingRoom).emit('userLeft');
+      cleanupRoom(socket.id, existingRoom);
+    }
+
+    const userInfo = {
+      socket,
+      userId,
+      gender: gender || 'other',
+      preference: preference || ['male', 'female', 'other'],
+      profile: profile && typeof profile === 'object' ? profile : {},
+    };
+    waitingUsers.set(socket.id, userInfo);
+
+    const matched = tryMatch(userInfo);
+    if (!matched) {
+      socket.emit('waitingForMatch');
+    }
+  });
+
+  socket.on('leaveQueue', () => {
+    waitingUsers.delete(socket.id);
+  });
+
+  socket.on('nextUser', () => {
+    const roomId = socketToRoom.get(socket.id);
+    if (roomId) {
+      socket.to(roomId).emit('userLeft');
+      cleanupRoom(socket.id, roomId);
+    }
+    waitingUsers.delete(socket.id);
+  });
+
+  socket.on('acceptMatch', ({ roomId }) => {
+    const room = activeRooms.get(roomId);
+    if (!room || !room.accepts || room.proceedEmitted) return;
+    if (room.accepts.has(socket.id)) return;
+
+    room.accepts.add(socket.id);
+
+    const otherSid = room.users.find((id) => id !== socket.id);
+    if (otherSid) {
+      io.sockets.sockets.get(otherSid)?.emit('peerMatchStatus', { roomId, kind: 'peerAccepted' });
+    }
+
+    if (room.accepts.size >= 2) {
+      room.proceedEmitted = true;
+      if (room.matchTimeoutId) {
+        clearTimeout(room.matchTimeoutId);
+        room.matchTimeoutId = null;
+      }
+      room.users.forEach((sid) => {
+        const s = io.sockets.sockets.get(sid);
+        if (!s) return;
+        const isOfferer = sid === room.offererSid;
+        const peerSid = room.users.find((x) => x !== sid);
+        const peerMeta = peerSid ? room.meta[peerSid] : null;
+        s.emit('matchProceed', {
+          roomId,
+          isOfferer,
+          peerId: peerMeta?.userId,
+          peerProfile: peerMeta?.profile || {},
+        });
+      });
+      return;
+    }
+
+    socket.emit('matchWaiting', { roomId });
+  });
+
+  socket.on('declineMatch', ({ roomId }) => {
+    const room = activeRooms.get(roomId);
+    if (!room) return;
+    const otherSid = room.users.find((id) => id !== socket.id);
+    if (otherSid) {
+      io.sockets.sockets.get(otherSid)?.emit('peerMatchStatus', { roomId, kind: 'peerDeclined' });
+      io.sockets.sockets.get(otherSid)?.emit('matchDeclined');
+    }
+    cleanupRoom(socket.id, roomId);
+    waitingUsers.delete(socket.id);
+  });
+
+  socket.on('sendMessage', ({ roomId, message, userId, id }) => {
+    socket.to(roomId).emit('receiveMessage', {
+      message,
+      userId,
+      timestamp: Date.now(),
+      ...(id ? { id } : {}),
+    });
+  });
+
+  // WebRTC signalling
+  socket.on('offer', ({ roomId, offer }) => {
+    socket.to(roomId).emit('offer', { offer });
+  });
+
+  socket.on('answer', ({ roomId, answer }) => {
+    socket.to(roomId).emit('answer', { answer });
+  });
+
+  socket.on('iceCandidate', ({ roomId, candidate }) => {
+    socket.to(roomId).emit('iceCandidate', { candidate });
+  });
+
+  socket.on('rtcReady', ({ roomId }) => {
+    const room = activeRooms.get(roomId);
+    if (!room) return;
+    if (!rtcReadyByRoom.has(roomId)) rtcReadyByRoom.set(roomId, new Set());
+    rtcReadyByRoom.get(roomId).add(socket.id);
+    const ready = rtcReadyByRoom.get(roomId);
+    if (ready.size >= 2 && room.offererSid) {
+      io.to(room.offererSid).emit('createOffer');
+      rtcReadyByRoom.delete(roomId);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`🔌 Disconnected: ${socket.id}`);
+    waitingUsers.delete(socket.id);
+    const roomId = socketToRoom.get(socket.id);
+    if (roomId) {
+      socket.to(roomId).emit('userDisconnected');
+      cleanupRoom(socket.id, roomId);
+    }
+    connectedSockets = Math.max(0, connectedSockets - 1);
+    io.emit('onlineCount', connectedSockets);
+  });
+});
+
+function cleanupRoom(socketId, roomId) {
+  const room = activeRooms.get(roomId);
+  if (!room) return;
+  if (room.matchTimeoutId) {
+    clearTimeout(room.matchTimeoutId);
+    room.matchTimeoutId = null;
+  }
+  rtcReadyByRoom.delete(roomId);
+  room.users.forEach((sid) => {
+    socketToRoom.delete(sid);
+    const s = io.sockets.sockets.get(sid);
+    if (s) s.leave(roomId);
+  });
+  activeRooms.delete(roomId);
+}
+
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
