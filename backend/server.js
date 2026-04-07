@@ -67,7 +67,10 @@ function recordInteraction(user1Id, user2Id) {
   interactionHistory.get(user2Id).set(user1Id, expires);
 }
 
-let connectedSockets = 0;
+// Let the server natively broadcast the connected count every 2 seconds
+setInterval(() => {
+  io.emit('onlineCount', io.engine.clientsCount);
+}, 2000);
 
 function tryMatch(newUser) {
   for (const [sid, candidate] of waitingUsers.entries()) {
@@ -148,8 +151,9 @@ function tryMatch(newUser) {
 // ─── Socket.IO Events ─────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
   console.log(`🔌 Connected: ${socket.id}`);
-  connectedSockets += 1;
-  io.emit('onlineCount', connectedSockets);
+  
+  // Immeditately send the current count to the new socket specifically
+  socket.emit('onlineCount', io.engine.clientsCount);
 
   socket.on('joinQueue', ({ userId, gender, preference, profile }) => {
     // Leave any existing room first
@@ -278,8 +282,6 @@ io.on('connection', (socket) => {
       socket.to(roomId).emit('userDisconnected');
       cleanupRoom(socket.id, roomId);
     }
-    connectedSockets = Math.max(0, connectedSockets - 1);
-    io.emit('onlineCount', connectedSockets);
   });
 });
 
