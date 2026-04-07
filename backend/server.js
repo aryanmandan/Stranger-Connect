@@ -42,16 +42,52 @@ const socketToRoom = new Map();
 // WebRTC: both peers must signal ready before the offerer creates an offer (avoids lost SDP)
 const rtcReadyByRoom = new Map();
 
+// interactionHistory: Map<userId, Map<otherUserId, expireTimestamp>>
+const interactionHistory = new Map();
+
+// Cleanup old history every minute
+setInterval(() => {
+  const now = Date.now();
+  for (const [uid, map] of interactionHistory.entries()) {
+    for (const [otherUid, exp] of map.entries()) {
+      if (exp < now) map.delete(otherUid);
+    }
+    if (map.size === 0) interactionHistory.delete(uid);
+  }
+}, 60 * 1000);
+
+function recordInteraction(user1Id, user2Id) {
+  if (!user1Id || !user2Id) return;
+  const expires = Date.now() + 10 * 60 * 1000; // 10 minutes
+  
+  if (!interactionHistory.has(user1Id)) interactionHistory.set(user1Id, new Map());
+  interactionHistory.get(user1Id).set(user2Id, expires);
+
+  if (!interactionHistory.has(user2Id)) interactionHistory.set(user2Id, new Map());
+  interactionHistory.get(user2Id).set(user1Id, expires);
+}
+
 let connectedSockets = 0;
 
 function tryMatch(newUser) {
   for (const [sid, candidate] of waitingUsers.entries()) {
     if (sid === newUser.socket.id) continue;
+    if (newUser.userId && candidate.userId && newUser.userId === candidate.userId) continue;
+
+    // Check interaction history to prevent matching with recently skipped people
+    let history = interactionHistory.get(newUser.userId);
+    if (history && history.get(candidate.userId) > Date.now()) continue;
+
+    history = interactionHistory.get(candidate.userId);
+    if (history && history.get(newUser.userId) > Date.now()) continue;
 
     const aWantsB = newUser.preference.includes(candidate.gender) || newUser.preference.includes('any');
     const bWantsA = candidate.preference.includes(newUser.gender) || candidate.preference.includes('any');
 
     if (aWantsB && bWantsA) {
+      // Record encounter so they don't match for next 10 mins
+      recordInteraction(newUser.userId, candidate.userId);
+
       // Remove both from queue
       waitingUsers.delete(sid);
       waitingUsers.delete(newUser.socket.id);

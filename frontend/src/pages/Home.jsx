@@ -8,7 +8,7 @@ function Globe() {
   return (
     <div className="relative w-72 h-72 mx-auto animate-float">
       <div className="absolute inset-0 rounded-full bg-cyan-500/10 blur-3xl scale-150" />
-      
+
       <svg viewBox="0 0 280 280" xmlns="http://www.w3.org/2000/svg" className="w-full h-full drop-shadow-2xl">
         <defs>
           <radialGradient id="globeGrad" cx="35%" cy="35%" r="65%">
@@ -24,21 +24,21 @@ function Globe() {
             <circle cx="140" cy="140" r="120" />
           </clipPath>
           <filter id="glow">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-            <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+            <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
         </defs>
-        
+
         <circle cx="140" cy="140" r="120" fill="url(#globeGrad)" stroke="#00f5ff" strokeWidth="0.5" strokeOpacity="0.4" />
-        
+
         <g clipPath="url(#globeClip)" opacity="0.25">
-          {[-80,-60,-40,-20,0,20,40,60,80].map(lat => {
+          {[-80, -60, -40, -20, 0, 20, 40, 60, 80].map(lat => {
             const y = 140 + (lat / 90) * 120;
             const r = Math.cos((lat * Math.PI) / 180) * 120;
             return <ellipse key={lat} cx="140" cy={y} rx={r} ry={r * 0.2} fill="none" stroke="#00f5ff" strokeWidth="0.5" />;
           })}
           {[0, 30, 60, 90, 120, 150].map(lng => (
-            <ellipse key={lng} cx="140" cy="140" rx={120 * Math.abs(Math.cos((lng*Math.PI)/180))} ry="120"
+            <ellipse key={lng} cx="140" cy="140" rx={120 * Math.abs(Math.cos((lng * Math.PI) / 180))} ry="120"
               fill="none" stroke="#00f5ff" strokeWidth="0.5"
               transform={`rotate(${lng}, 140, 140)`} />
           ))}
@@ -52,8 +52,8 @@ function Globe() {
         </g>
 
         {[
-          {cx: 108, cy: 118}, {cx: 165, cy: 108}, {cx: 183, cy: 158},
-          {cx: 94, cy: 162}, {cx: 148, cy: 172}, {cx: 125, cy: 95},
+          { cx: 108, cy: 118 }, { cx: 165, cy: 108 }, { cx: 183, cy: 158 },
+          { cx: 94, cy: 162 }, { cx: 148, cy: 172 }, { cx: 125, cy: 95 },
         ].map((dot, i) => (
           <g key={i} clipPath="url(#globeClip)">
             <circle cx={dot.cx} cy={dot.cy} r="3" fill="#00f5ff" filter="url(#glow)" opacity="0.9" />
@@ -140,7 +140,7 @@ export default function Home() {
     setIsLoading(true);
     try {
       await signInWithGoogle();
-      navigate('/profile');
+      // Navigation is natively handled by the user useEffect!
     } catch (e) {
       setAuthError(e.message || 'Google sign-in failed');
     } finally {
@@ -153,7 +153,7 @@ export default function Home() {
     setIsLoading(true);
     await new Promise(r => setTimeout(r, 400));
     demoLogin(name.trim());
-    navigate('/profile');
+    // Auto-navigation is handled by the useEffect above
     setIsLoading(false);
   };
 
@@ -171,9 +171,9 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center">
             <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-cyan-400" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="2" y1="12" x2="22" y2="12"/>
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
             </svg>
           </div>
           <span className="font-display font-bold text-lg text-slate-900 dark:text-white tracking-tight">
@@ -190,14 +190,14 @@ export default function Home() {
           >
             {isDark ? (
               <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-yellow-400" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
               </svg>
             ) : (
               <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-slate-700" stroke="currentColor" strokeWidth="2">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
               </svg>
             )}
           </button>
@@ -231,10 +231,10 @@ export default function Home() {
                 className="w-full flex items-center justify-center gap-3 px-8 py-3.5 rounded-xl bg-white text-gray-900 font-body font-semibold hover:bg-gray-100 transition-colors disabled:opacity-50"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                 </svg>
                 {isLoading ? 'Signing in…' : 'Continue with Google'}
               </button>
